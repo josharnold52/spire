@@ -72,6 +72,31 @@ object Checked {
     val resetTree = resetLocalAttrs(c)(tree) // See SI-6711
     c.Expr[A](resetTree)
   }
+
+  def doesMultiplicationOverflowLong(x: Long, y: Long): Boolean = {
+    //Fast-path check for small values of x and y
+    if (x.toInt == x && y.toInt == y)
+      return false
+
+    val x0 = 0xFFFFFFFFL & x //unsigned
+    val x1 = x >> 32
+    val y0 = 0xFFFFFFFFL & y //unsigned
+    val y1 = y >> 32
+
+    val p00 = x0 * y0 //unsigned
+    val p01 = x0 * y1
+    val p10 = x1 * y0
+    val p11 = x1 * y1
+
+    val s1 = (p00 >>> 32) + (p01 & 0xFFFFFFFFL) + (p10 & 0xFFFFFFFFL) //unsigned
+    val s2to3 = (p01 >> 32) + (p10 >> 32) + (s1 >>> 32) + p11
+
+    s2to3 != (s1.toInt >> 31)
+  }
+
+  def doesMultiplicationOverflowInt(x: Int, y: Int): Boolean =
+    (x.toLong * y.toLong) != (x * y)
+
 }
 
 private[macros] case class CheckedRewriter[C <: Context](c: C) {
@@ -102,8 +127,8 @@ private[macros] case class CheckedRewriter[C <: Context](c: C) {
     }
 
   def makeRewriter(fallback: TermName): Transformer = {
-    val LongRewriter = new Rewriter[Long](q"Long.MinValue", fallback)
-    val IntRewriter = new Rewriter[Int](q"Int.MinValue", fallback)
+    val LongRewriter = new Rewriter[Long](q"Long.MinValue", TermName("doesMultiplicationOverflowLong"), fallback)
+    val IntRewriter = new Rewriter[Int](q"Int.MinValue", TermName("doesMultiplicationOverflowInt"), fallback)
 
     new Transformer {
       val f = IntRewriter(transform _) orElse LongRewriter(transform _)
@@ -113,7 +138,7 @@ private[macros] case class CheckedRewriter[C <: Context](c: C) {
     }
   }
 
-  class Rewriter[A](val minValue: Tree, val fallback: TermName)(implicit typeTag: c.WeakTypeTag[A]) {
+  class Rewriter[A](val minValue: Tree, val multCheckMethod: TermName, val fallback: TermName)(implicit typeTag: c.WeakTypeTag[A]) {
     val tpe: Type = typeTag.tpe
 
     // unops
@@ -186,7 +211,7 @@ private[macros] case class CheckedRewriter[C <: Context](c: C) {
 
       case tree @ Apply(Select(lhs, Times), rhs :: Nil) if binopOk(tree) =>
         runWithXYZ(rewrite, lhs, rhs) { (x, y, z) =>
-          q"""val $z = $x * $y; if ($x == 0 || ($y == $z / $x && !($x == -1 && $y == $minValue))) $z else return $fallback"""
+          q"""if (_root_.spire.macros.Checked.$multCheckMethod($x, $y) ) return $fallback; ($x * $y)"""
         }
 
       case tree @ Apply(Select(lhs, Div), rhs :: Nil) if binopOk(tree) =>
