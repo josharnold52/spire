@@ -102,8 +102,8 @@ private[macros] case class CheckedRewriter[C <: Context](c: C) {
     }
 
   def makeRewriter(fallback: TermName): Transformer = {
-    val LongRewriter = new Rewriter[Long](q"Long.MinValue", q"0x100000000L", q"0x1FFFFFFFFL", fallback)
-    val IntRewriter = new Rewriter[Int](q"Int.MinValue", q"0x10000", q"0x1FFFF" , fallback)
+    val LongRewriter = new Rewriter[Long](q"Long.MinValue", q"0x80000000L", q"0xFFFFFFFFL", fallback)
+    val IntRewriter = new Rewriter[Int](q"Int.MinValue", q"0x8000", q"0xFFFF" , fallback)
 
     new Transformer {
       val f = IntRewriter(transform _) orElse LongRewriter(transform _)
@@ -187,7 +187,7 @@ private[macros] case class CheckedRewriter[C <: Context](c: C) {
       case tree @ Apply(Select(lhs, Times), rhs :: Nil) if binopOk(tree) =>
         runWithXYZ(rewrite, lhs, rhs) { (x, y, z) =>
           q"""val $z = $x * $y; if ($x == 0 || (
-                ((($x + $topHalf) | ($y + $topHalf)) & (~ $mask)) == 0
+                  ((($x + $topHalf) | ($y + $topHalf)) & (~ $mask)) == 0
               ) ||
               ($y == $z / $x && !($x == -1 && $y == $minValue))) $z else return $fallback"""
         }
