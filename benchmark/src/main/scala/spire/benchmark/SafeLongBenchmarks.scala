@@ -85,8 +85,7 @@ class SafeLongMultiplyBenchmark {
 class SafeLongMixedMultiplyBenchmark {
 
 
- //@Param(Array("0.0","0.1","0.2","0.3","0.4","0.5","0.6","0.7","0.8","0.9","1.0"))
-  @Param(Array("0.5"))
+  @Param(Array("0.0","0.1","0.2","0.3","0.4","0.5","0.6","0.7","0.8","0.9","1.0"))
   var fastPathFraction: String = _
 
   @Param(Array("l_l_l_rs","l_l_l_sr","l_l_b_ss"))
