@@ -47,11 +47,13 @@ class SafeLongMultiplyBenchmark {
     "l_b_b" → ((SafeLong.two, SafeLong.safe64)),
     "b_l_l" → ((SafeLong.safe64, SafeLong.minusOne)),
     "b_l_b" → ((SafeLong.safe64, SafeLong.two)),
-    "b_b_b" → ((SafeLong.safe64, SafeLong.safe64))
+    "b_b_b" → ((SafeLong.safe64, SafeLong.safe64)),
+    "l_l_l_cm1" → ((SafeLong.two, SafeLong(Int.MaxValue.toLong << 1))),  //Checked multiplication slowpath
+    "l_l_l_cm2" → ((SafeLong(Int.MaxValue.toLong << 1), SafeLong.two))   //Checked multiplication slowpath
   )
   check(pairs, _ * _)
 
-  @Param(Array("l_l_l", "l_l_b", "l_b_l", "l_b_b", "b_l_l", "b_l_b", "b_b_b"))
+  @Param(Array("l_l_l", "l_l_b", "l_b_l", "l_b_b", "b_l_l", "b_l_b", "b_b_b", "l_l_l_cm1", "l_l_l_cm2"))
   var kind: String = ""
 
   var a: SafeLong = 0L

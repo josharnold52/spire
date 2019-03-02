@@ -101,9 +101,27 @@ private[macros] case class CheckedRewriter[C <: Context](c: C) {
       case _ =>
     }
 
+  abstract class RewriterTypeInfo[A](implicit typeTag: c.WeakTypeTag[A]) {
+    val tpe: Type = typeTag.tpe
+    def typeTree: Tree = tq"$tpe"
+
+    val minValue: Tree
+    def narrowed(t: Tree): Tree
+  }
+
+  implicit object RewriterIntInfo extends RewriterTypeInfo[Int] {
+    val minValue = q"${Int.MinValue}"
+    def narrowed(t: Tree): Tree = q"($t:$typeTree).toShort"
+  }
+
+  implicit object RewriterLongInfo extends RewriterTypeInfo[Long] {
+    val minValue = q"${Long.MinValue}"
+    def narrowed(t: Tree): Tree = q"($t:$typeTree).toInt"
+  }
+
   def makeRewriter(fallback: TermName): Transformer = {
-    val LongRewriter = new Rewriter[Long](q"Long.MinValue", q"0x80000000L", q"0xFFFFFFFFL", fallback)
-    val IntRewriter = new Rewriter[Int](q"Int.MinValue", q"0x8000", q"0xFFFF" , fallback)
+    val LongRewriter = new Rewriter[Long](fallback)
+    val IntRewriter = new Rewriter[Int](fallback)
 
     new Transformer {
       val f = IntRewriter(transform _) orElse LongRewriter(transform _)
@@ -113,8 +131,9 @@ private[macros] case class CheckedRewriter[C <: Context](c: C) {
     }
   }
 
-  class Rewriter[A](val minValue: Tree, val topHalf: Tree, val mask: Tree, val fallback: TermName)(implicit typeTag: c.WeakTypeTag[A]) {
-    val tpe: Type = typeTag.tpe
+  class Rewriter[A](val fallback: TermName)(implicit info: RewriterTypeInfo[A]) {
+    val tpe: Type = info.tpe
+    val minValue = info.minValue
 
     // unops
     val Negate = termName(c)("unary_$minus")
@@ -186,10 +205,11 @@ private[macros] case class CheckedRewriter[C <: Context](c: C) {
 
       case tree @ Apply(Select(lhs, Times), rhs :: Nil) if binopOk(tree) =>
         runWithXYZ(rewrite, lhs, rhs) { (x, y, z) =>
-          q"""val $z = $x * $y; if ($x == 0 || (
-                  ((($x + $topHalf) | ($y + $topHalf)) & (~ $mask)) == 0
-              ) ||
-              ($y == $z / $x && !($x == -1 && $y == $minValue))) $z else return $fallback"""
+          q"""val $z = $x * $y; if (
+                    $x == 0
+                    || ((${info.narrowed(x)} == $x) && (${info.narrowed(y)} == $y))
+                    || ($y == $z / $x && !($x == -1 && $y == $minValue))
+              ) $z else return $fallback"""
         }
 
       case tree @ Apply(Select(lhs, Div), rhs :: Nil) if binopOk(tree) =>
