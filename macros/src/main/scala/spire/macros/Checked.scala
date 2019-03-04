@@ -72,6 +72,27 @@ object Checked {
     val resetTree = resetLocalAttrs(c)(tree) // See SI-6711
     c.Expr[A](resetTree)
   }
+
+  def doesMultiplicationOverflowLong(x: Long, y: Long): Boolean = {
+    val x0 = 0xFFFFFFFFL & x;
+    val x1 = x >> 32
+    val y0 = 0xFFFFFFFFL & y
+    val y1 = y >> 32
+
+    val p00 = x0 * y0
+    val p01 = x0 * y1
+    val p10 = x1 * y0
+    val p11 = x1 * y1
+
+    val c1 = (p00 >>> 32) + (p01 & 0xFFFFFFFFL) + (p10 & 0xFFFFFFFFL)
+    val c23 = (p01 >> 32) + (p10 >> 32) + (c1 >>> 32) + p11
+
+    c23 != (c1.toInt >> 31)
+  }
+
+  def doesMultiplicationOverflowInt(x: Int, y: Int): Boolean =
+    (x.toLong * y.toLong) != (x * y)
+
 }
 
 private[macros] case class CheckedRewriter[C <: Context](c: C) {
@@ -101,27 +122,9 @@ private[macros] case class CheckedRewriter[C <: Context](c: C) {
       case _ =>
     }
 
-  abstract class RewriterTypeInfo[A](implicit typeTag: c.WeakTypeTag[A]) {
-    val tpe: Type = typeTag.tpe
-    def typeTree: Tree = tq"$tpe"
-
-    val minValue: Tree
-    def narrowed(t: Tree): Tree
-  }
-
-  implicit object RewriterIntInfo extends RewriterTypeInfo[Int] {
-    val minValue = q"${Int.MinValue}"
-    def narrowed(t: Tree): Tree = q"($t:$typeTree).toShort"
-  }
-
-  implicit object RewriterLongInfo extends RewriterTypeInfo[Long] {
-    val minValue = q"${Long.MinValue}"
-    def narrowed(t: Tree): Tree = q"($t:$typeTree).toInt"
-  }
-
   def makeRewriter(fallback: TermName): Transformer = {
-    val LongRewriter = new Rewriter[Long](fallback)
-    val IntRewriter = new Rewriter[Int](fallback)
+    val LongRewriter = new Rewriter[Long](q"Long.MinValue", TermName("doesMultiplicationOverflowLong"), fallback)
+    val IntRewriter = new Rewriter[Int](q"Int.MinValue", TermName("doesMultiplicationOverflowInt"), fallback)
 
     new Transformer {
       val f = IntRewriter(transform _) orElse LongRewriter(transform _)
@@ -131,9 +134,8 @@ private[macros] case class CheckedRewriter[C <: Context](c: C) {
     }
   }
 
-  class Rewriter[A](val fallback: TermName)(implicit info: RewriterTypeInfo[A]) {
-    val tpe: Type = info.tpe
-    val minValue = info.minValue
+  class Rewriter[A](val minValue: Tree, val multCheckMethod: TermName, val fallback: TermName)(implicit typeTag: c.WeakTypeTag[A]) {
+    val tpe: Type = typeTag.tpe
 
     // unops
     val Negate = termName(c)("unary_$minus")
@@ -205,11 +207,7 @@ private[macros] case class CheckedRewriter[C <: Context](c: C) {
 
       case tree @ Apply(Select(lhs, Times), rhs :: Nil) if binopOk(tree) =>
         runWithXYZ(rewrite, lhs, rhs) { (x, y, z) =>
-          q"""val $z = $x * $y; if (
-                    $x == 0
-                    || ((${info.narrowed(x)} == $x) && (${info.narrowed(y)} == $y))
-                    || ($y == $z / $x && !($x == -1 && $y == $minValue))
-              ) $z else return $fallback"""
+          q"""if (_root_.spire.macros.Checked.$multCheckMethod($x, $y) ) return $fallback; ($x * $y)"""
         }
 
       case tree @ Apply(Select(lhs, Div), rhs :: Nil) if binopOk(tree) =>
