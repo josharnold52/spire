@@ -74,20 +74,21 @@ object Checked {
   }
 
   def doesMultiplicationOverflowLong(x: Long, y: Long): Boolean = {
-    val x0 = 0xFFFFFFFFL & x;
+    if (x.toInt == x && y.toInt == y) return false
+    val x0 = 0xFFFFFFFFL & x //unsigned
     val x1 = x >> 32
-    val y0 = 0xFFFFFFFFL & y
+    val y0 = 0xFFFFFFFFL & y //unsigned
     val y1 = y >> 32
 
-    val p00 = x0 * y0
+    val p00 = x0 * y0 //unsigned
     val p01 = x0 * y1
     val p10 = x1 * y0
     val p11 = x1 * y1
 
-    val c1 = (p00 >>> 32) + (p01 & 0xFFFFFFFFL) + (p10 & 0xFFFFFFFFL)
-    val c23 = (p01 >> 32) + (p10 >> 32) + (c1 >>> 32) + p11
+    val s1 = (p00 >>> 32) + (p01 & 0xFFFFFFFFL) + (p10 & 0xFFFFFFFFL) //unsigned
+    val s2to3 = (p01 >> 32) + (p10 >> 32) + (s1 >>> 32) + p11
 
-    c23 != (c1.toInt >> 31)
+    s2to3 != (s1.toInt >> 31)
   }
 
   def doesMultiplicationOverflowInt(x: Int, y: Int): Boolean =
