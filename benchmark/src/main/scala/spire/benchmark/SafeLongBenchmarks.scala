@@ -7,7 +7,6 @@ import org.openjdk.jmh.annotations._
 import org.openjdk.jmh.infra.Blackhole
 import spire.math.SafeLong
 import SafeLongUtil._
-import spire.random.rng.MersenneTwister64
 
 object SafeLongUtil {
   private def isBig(x: SafeLong) = x.getClass.getSimpleName.endsWith("BigInteger")
